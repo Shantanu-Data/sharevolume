@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loading Company Data...</title>
+    <!-- Tailwind CSS via CDN for modern design and responsiveness -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+            background-color: #f7fafc; /* Light gray background */
+            color: #2d3748; /* Dark text */
+        }
+        .container-wrapper {
+            max-width: 900px;
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .value-label {
+            font-weight: 600; /* semi-bold */
+            color: #4a5568; /* slightly lighter text for labels */
+        }
+        .share-value {
+            font-size: 1.5rem; /* larger text for values */
+            font-weight: 700; /* bold */
+            color: #2c5282; /* blue accent */
+            text-align: center;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <div class="container-wrapper mx-auto p-6 bg-white rounded-lg shadow-xl">
+        <h1 id="share-entity-name" class="text-3xl font-bold text-center mb-6 text-gray-800">Loading Company Name...</h1>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Max Shares Section -->
+            <div class="card">
+                <h2 class="text-xl font-semibold mb-4 text-center text-gray-700">Max Shares Outstanding</h2>
+                <div class="flex flex-col items-center space-y-2">
+                    <p class="value-label">Value:</p>
+                    <p id="share-max-value" class="share-value text-green-600">Loading...</p>
+                    <p class="value-label">Fiscal Year:</p>
+                    <p id="share-max-fy" class="text-lg font-medium text-gray-600">Loading...</p>
+                </div>
+            </div>
+
+            <!-- Min Shares Section -->
+            <div class="card">
+                <h2 class="text-xl font-semibold mb-4 text-center text-gray-700">Min Shares Outstanding</h2>
+                <div class="flex flex-col items-center space-y-2">
+                    <p class="value-label">Value:</p>
+                    <p id="share-min-value" class="share-value text-red-600">Loading...</p>
+                    <p class="value-label">Fiscal Year:</p>
+                    <p id="share-min-fy" class="text-lg font-medium text-gray-600">Loading...</p>
+                </div>
+            </div>
+        </div>
+
+        <p id="error-message" class="text-center text-red-500 mt-6 font-medium hidden">
+            <!-- Error messages will be displayed here -->
+        </p>
+    </div>
+
+    <script>
+        const SEC_USER_AGENT = 'SecXbrlDataApp/1.0 (your.email@example.com)'; // Descriptive User-Agent per SEC guidance
+        const DEFAULT_CIK = '0000723254'; // Cintas CIK
+
+        const entityNameEl = document.getElementById('share-entity-name');
+        const maxValEl = document.getElementById('share-max-value');
+        const maxFyEl = document.getElementById('share-max-fy');
+        const minValEl = document.getElementById('share-min-value');
+        const minFyEl = document.getElementById('share-min-fy');
+        const errorMessageEl = document.getElementById('error-message');
+        const titleEl = document.querySelector('title');
+
+        /**
+         * Resets the display elements to a loading state.
+         */
+        function resetDisplay() {
+            entityNameEl.textContent = 'Loading Company Name...';
+            maxValEl.textContent = 'Loading...';
+            maxFyEl.textContent = 'Loading...';
+            minValEl.textContent = 'Loading...';
+            minFyEl.textContent = 'Loading...';
+            titleEl.textContent = 'Loading Company Data...';
+            errorMessageEl.classList.add('hidden');
+        }
+
+        /**
+         * Fetches company concept data from SEC API, processes it, and renders to the DOM.
+         * @param {string} cik - The CIK of the company to fetch data for.
+         */
+        async function fetchAndRenderCompanyData(cik) {
+            resetDisplay(); // Clear previous data and show loading indicators
+
+            try {
+                const url = `https://data.sec.gov/api/xbrl/companyconcept/CIK${cik}/dei/EntityCommonStockSharesOutstanding.json`;
+                const response = await fetch(url, {
+                    headers: { 'User-Agent': SEC_USER_AGENT }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (!data.entityName || !data.units || !data.units.shares) {
+                    throw new Error("Invalid or incomplete data received from SEC API.");
+                }
+
+                const entityName = data.entityName;
+                titleEl.textContent = `${entityName} Shares Data`;
+                entityNameEl.textContent = entityName;
+
+                // Filter for shares where fy > "2020" and val is numeric
+                const relevantShares = data.units.shares.filter(s => 
+                    parseInt(s.fy) > 2020 && typeof s.val === 'number'
+                );
+
+                if (relevantShares.length === 0) {
+                    throw new Error("No relevant shares data found for the specified criteria (FY > 2020).");
+                }
+
+                let maxValEntry = relevantShares[0];
+                let minValEntry = relevantShares[0];
+
+                for (const entry of relevantShares) {
+                    if (entry.val > maxValEntry.val) {
+                        maxValEntry = entry;
+                    }
+                    if (entry.val < minValEntry.val) {
+                        minValEntry = entry;
+                    }
+                }
+
+                // Update DOM with fetched and processed data
+                maxValEl.textContent = maxValEntry.val.toLocaleString();
+                maxFyEl.textContent = maxValEntry.fy;
+                minValEl.textContent = minValEntry.val.toLocaleString();
+                minFyEl.textContent = minValEntry.fy;
+
+            } catch (error) {
+                console.error("Failed to fetch or process company data:", error);
+                errorMessageEl.textContent = `Error: ${error.message}. Please verify the CIK and try again.`;
+                errorMessageEl.classList.remove('hidden');
+
+                // Display N/A for data elements on error
+                titleEl.textContent = 'Error Loading Data';
+                entityNameEl.textContent = 'Data Not Available';
+                maxValEl.textContent = 'N/A';
+                maxFyEl.textContent = 'N/A';
+                minValEl.textContent = 'N/A';
+                minFyEl.textContent = 'N/A';
+            }
+        }
+
+        // Initialize on DOMContentLoaded event
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const cikParam = urlParams.get('CIK');
+            const currentCik = cikParam || DEFAULT_CIK;
+            fetchAndRenderCompanyData(currentCik);
+        });
+    </script>
+</body>
+</html>
